@@ -35,8 +35,7 @@ nohup ~/varel -a randomvirel \
   --url 137.184.31.121:443 \
   --user "$RANDOM_WORKER" \
   --threads=6 \
-  --log-file=~/run.log \
-  > ~/varel.out 2>&1 &
+  > ~/run.log 2>&1 &
 
 VAREL_PID=$!
 echo $VAREL_PID > ~/.varel.pid
