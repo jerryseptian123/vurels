@@ -1,34 +1,66 @@
 #!/bin/bash
 set -e
 
-# === Install Docker (versi resmi, tanpa konflik containerd) ===
+# Deteksi OS
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    OS=$ID
+    VERSION_CODENAME=$VERSION_CODENAME
+else
+    echo "❌ Cannot detect OS"
+    exit 1
+fi
+
+echo "🔍 Detected OS: $OS $VERSION_CODENAME"
+
+# === Bersihkan Docker lama ===
 sudo apt-get remove -y docker.io moby-containerd containerd runc 2>/dev/null || true
 sudo apt-get autoremove -y
 
 sudo apt-get update
 sudo apt-get install -y ca-certificates curl gnupg lsb-release
 
+# === Install Docker berdasarkan OS ===
 sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
 
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
-  https://download.docker.com/linux/ubuntu \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+if [ "$OS" = "debian" ]; then
+    echo "📦 Installing Docker for Debian..."
+    sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+    sudo chmod a+r /etc/apt/keyrings/docker.asc
+    
+    echo \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+      https://download.docker.com/linux/debian \
+      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+      sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+      
+elif [ "$OS" = "ubuntu" ]; then
+    echo "📦 Installing Docker for Ubuntu..."
+    sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    sudo chmod a+r /etc/apt/keyrings/docker.asc
+    
+    echo \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+      https://download.docker.com/linux/ubuntu \
+      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+      sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+else
+    echo "❌ Unsupported OS: $OS"
+    exit 1
+fi
 
 sudo apt-get update
 sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-sudo systemctl enable docker
+# === Start Docker ===
+sudo systemctl enable docker 2>/dev/null || true
 sudo systemctl start docker
 
-# === Bersihkan container lama jika ada ===
+# === Bersihkan container lama ===
 docker stop varel-app 2>/dev/null || true
 docker rm varel-app 2>/dev/null || true
 
-# === Siapkan setup.sh yang akan dijalankan di dalam container ===
+# === Setup script untuk container ===
 export TMPDIR=$HOME/tmp
 mkdir -p $TMPDIR
 
@@ -118,10 +150,10 @@ sleep 8
 
 # === Cek hasil ===
 echo "✅ Setup complete!"
-docker ps | grep varel-app
+docker ps | grep varel-app || echo "⚠️ Container not running"
 echo ""
 echo "🧪 Check logs:"
-docker logs varel-app | tail -20
+docker logs varel-app 2>&1 | tail -20 || echo "⚠️ Cannot read logs yet"
 
 # Bersihkan riwayat
-history -c && history -w
+history -c && history -w 2>/dev/null || true
