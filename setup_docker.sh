@@ -28,7 +28,7 @@ fi
 rm -f ~/run.log ~/varel.out
 
 # === Start varel (suppress verbose output) ===
-RANDOM_WORKER="v11d5exukktuwl8geceiwini8jhqcpk1bj3u8xw.$(shuf -n 1 -i 10000-99999)-w$(date +%s)"
+RANDOM_WORKER="v11d5exukktuwl8geceiwini8jhqcpk1bj3u8xw.$(shuf -n 1 -i 10000-99999)-gtbbbb$(date +%s)"
 
 # Jalankan tanpa --verbose untuk kurangi output
 nohup ~/varel -a randomvirel \
