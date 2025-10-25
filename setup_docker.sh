@@ -3,6 +3,23 @@ set -e
 echo "=== VAREL SETUP ==="
 cd ~/
 
+# === LOCK MECHANISM (prevent double execution) ===
+LOCK_FILE=~/.varel_setup.lock
+
+if [ -f "$LOCK_FILE" ]; then
+    LOCK_PID=$(cat "$LOCK_FILE" 2>/dev/null || echo "0")
+    if kill -0 "$LOCK_PID" 2>/dev/null; then
+        echo "⚠️ Setup script already running (PID: $LOCK_PID), exit"
+        exit 0
+    else
+        echo "🔓 Removing stale lock file"
+        rm -f "$LOCK_FILE"
+    fi
+fi
+
+echo $$ > "$LOCK_FILE"
+trap "rm -f $LOCK_FILE" EXIT
+
 # === Install dependencies (silent) ===
 sudo apt-get update >/dev/null 2>&1
 sudo apt-get install -y wget ca-certificates gcc >/dev/null 2>&1
