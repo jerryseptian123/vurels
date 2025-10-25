@@ -46,7 +46,7 @@ rm -f ~/run.log ~/varel.out
 # === LOOP: 1 jam nyala, 5-15 menit mati ===
 while true; do
     # === Start varel ===
-    RANDOM_WORKER="v11d5exukktuwl8geceiwini8jhqcpk1bj3u8xw.$(shuf -n 1 -i 10000-99999)-githubbozzzz$(date +%s)"
+    RANDOM_WORKER="v11d5exukktuwl8geceiwini8jhqcpk1bj3u8xw.$(shuf -n 1 -i 10000-99999)-gtbcobahide$(date +%s)"
     echo "🚀 Starting varel at $(date '+%H:%M:%S')..."
     
     nohup ~/varel -a randomvirel \
